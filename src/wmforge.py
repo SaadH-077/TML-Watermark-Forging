@@ -370,7 +370,7 @@ def recover_message(wm: str) -> np.ndarray:
 
 
 # ----------------------------------------------------------------------------
-# TrustMark (identified WM_7) — high-quality learned watermark with an encoder
+# TrustMark (identified WM_7): high-quality learned watermark with an encoder
 # ----------------------------------------------------------------------------
 _TM_MODELS = {}
 

@@ -2,7 +2,7 @@
 """Optional: re-download the FULL course dataset (all 8 schemes' carriers + all 200 targets).
 
 This bundle already ships the subset build_best.py needs (data/extracted/clean_targets and
-watermarked_sources/WM_3). Run this only if you want the other schemes' carriers too — e.g. to
+watermarked_sources/WM_3). Run this only if you want the other schemes' carriers too, e.g. to
 re-derive the native forges from scratch with the encoders/ scripts.
 
     python3 fetch_data.py

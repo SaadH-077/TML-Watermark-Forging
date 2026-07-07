@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Recreate our best leaderboard submission: public S_final = 0.8364.
 
-Output: submissions/candidate_best.zip  — a flat zip of 200 PNGs (1.png..200.png), where WM_k
+Output: submissions/candidate_best.zip, a flat zip of 200 PNGs (1.png..200.png), where WM_k
 covers targets 25(k-1)+1 .. 25k. Assembled from:
   * WM_2,4,5,6,7,8 : genuine native re-encodes (forged_native_masked/<WM>/), frozen
   * WM_1           : native dwtDct re-encode (forged_native_masked/WM_1), residual-amplified s=1.5

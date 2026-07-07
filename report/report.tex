@@ -1,0 +1,69 @@
+% TML 2026 Task 4 - Watermark Forgery - team_V
+% Self-contained ICLR-style preamble (compiles with any pdflatex). To use the official
+% ICLR class instead, replace the preamble below with \documentclass{article}\usepackage{iclr2024_conference}.
+\documentclass[10pt]{article}
+\usepackage[letterpaper,margin=1in]{geometry}
+\usepackage{times}
+\usepackage{microtype,booktabs,graphicx,amsmath,amssymb,url,xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage{titlesec}
+\titleformat{\section}{\normalfont\large\bfseries}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\normalfont\normalsize\bfseries}{\thesubsection}{0.5em}{}
+\titlespacing{\section}{0pt}{6pt}{2pt}
+\titlespacing{\subsection}{0pt}{4pt}{1pt}
+\setlength{\parskip}{2pt}\setlength{\parindent}{0pt}
+\pagestyle{empty}
+
+\begin{document}
+\begin{center}
+{\Large\bfseries Forging Image Watermarks by Scheme Identification and Native Re-encoding}\\[4pt]
+{\normalsize Trustworthy Machine Learning (SoSe 2026), Task 4 --- Team \textbf{team\_V}}\\[2pt]
+{\small Matriculation numbers: \textcolor{red}{$\langle$fill in$\rangle$} \quad$\cdot$\quad CMS Team ID: \textcolor{red}{team\_V (confirm)}}
+\end{center}
+\vspace{2pt}
+
+\section{Task and the constraint that shapes everything}
+For each of 8 unknown watermarking schemes $\mathrm{WM}_1..\mathrm{WM}_8$ we receive 25 watermarked ``carrier'' images that all carry \emph{one} shared hidden message. We must transplant that watermark onto 25 assigned clean target images so a hidden detector recovers the message, while keeping each image perceptually close to its clean target. Sources and targets are \emph{different} images (true transplantation), and resolution is locked per scheme.
+
+The score is $S_\text{final}=S_\text{det}\cdot S_\text{qlt}$ with $S_\text{det}=\max(0,\,2(\text{bitacc}-0.5))$ and $S_\text{qlt}=\exp(-8\,\text{LPIPS})$. The decisive asymmetry: \textbf{LPIPS is measurable locally, bit-accuracy is not} (we hold no detector). The only detection signal is the leaderboard (1 submission/hour, best-kept, 30\% public). $S_\text{det}$ is a hard gate --- $\text{bitacc}=0.5$ zeroes the image regardless of quality --- and the LPIPS budget turned out to be large. Hence our governing principle: \emph{land the bits first; detection strength, not quality, is the binding constraint.}
+
+\section{Approach}
+\subsection{Blind transplant fails; identification + native re-encode wins}
+The literature's averaging attack (estimate the watermark as the mean carrier residual, add it to the target) fails on frequency-domain and content-adaptive marks. On the two schemes where we could also decode, the contrast was decisive: native re-encode gave $S_\text{final}=0.888$ (WM$_1$/dwtDct) and $0.862$ (WM$_2$/RivaGAN) versus $\approx 0$ for additive transplant. If instead we \emph{identify} the scheme and re-embed the recovered message with its own genuine encoder, the forgery \emph{is} the real watermark --- perfect and perfectly generalizing. Identification became our core strategy.
+
+\subsection{The oracle test (identification without a detector)}
+The 25 carriers share one message, so for any candidate public decoder we decode all 25: if they agree on a single message (\emph{carrier-agreement} $\approx1.0$) while clean images decode randomly (\emph{clean-agreement} $\approx0.5$), the scheme is identified. Crucially, we require a \textbf{validated positive control} --- a genuine encode$\to$decode round-trip proving the decoder reads real marks --- and a known-negative control. This rigor matters: many apparent ``matches'' were artifacts (a decoder returning a constant output, or content-correlation bias that also elevates clean images). For example, running classical decoders on WM$_3$'s chroma channels reports carrier-agreement $1.000$, but the same decoder returns the \emph{identical constant bits on pure random noise} --- a degenerate reading, not a recovered message.
+
+\subsection{Seven of eight schemes cracked}
+Public decoders plus a systematic oracle sweep (one candidate scheme per isolated environment) identified 7/8, each then re-encoded natively with round-trip $\text{bitacc}=1.0$ and tiny LPIPS:
+
+\begin{center}\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+WM & scheme & forge & LPIPS / $S_\text{final}$\\
+\midrule
+WM$_1$ & dwtDct (invisible-watermark) & native re-encode & 0.006 / 0.89\\
+WM$_2$ & RivaGAN (invisible-watermark) & native re-encode & 0.016 / 0.86\\
+WM$_4$ & VINE-R (ICLR'25) & native re-encode & 0.003 / 0.94\\
+WM$_5$ & CIN (MM'22) & native re-encode & 0.001 / 0.99\\
+WM$_6$ & MBRS (MM'21) & native re-encode & 0.002 / 0.96\\
+WM$_7$ & TrustMark-Q & native re-encode & 0.001 / 0.99\\
+WM$_8$ & TrustMark-P (\texttt{use\_ECC=False}) & native re-encode & 0.001 / 0.99\\
+WM$_3$ & \emph{unidentified} (custom chroma) & color-axis transplant & 0.023 / $\approx$0.43\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{WM$_3$: an uncrackable instructor-custom scheme}
+For WM$_3$ we ruled out $\sim$27 public decoders under the positive-control bar (all VINE W-Bench baselines, RoSteALS, InvisMark, CRMark, Stable-Signature, LaWa, SepMark, PIMoG, EditGuard, and classical/spread-spectrum families). Forensics localize WM$_3$ to a \emph{low-frequency, green--magenta chroma} mark that is content-adaptive and \textbf{content-keyed}: a Craver-style diagnostic shows a norm-matched template transplant reaches near-optimal bit-accuracy on the analogous VINE mark ($0.88$) but WM$_3$'s detector accepts the same-quality template at only $\approx0.72$. So WM$_3$ has no public decoder and its per-image key defeats blind transplant; our best forge is a color-axis ($R{+}B{-}2G$) transplant with a bilateral-denoised template, capped at $S_\text{final}\approx0.43$. We confirmed the ceiling by exhausting strength, robust estimators (a 20\%-trimmed-mean beats the plain mean on decodable analogs but does not transfer to WM$_3$), and a learned-manifold forger (WMCopier), which the 25-carrier data wall keeps below transplant parity.
+
+\subsection{Native robustness: locating the residual gap}
+Since the leaderboard grades bit-accuracy after an unknown pre-detection transform, clean-PNG bit-accuracy \emph{overestimates} the server. We built a local \emph{robustness oracle} (decode a forge, apply JPEG/resize/noise/blur, re-decode, measure surviving bits) and audited all seven native forges. Six are already robust and near-optimal; only WM$_1$ (classical dwtDct) is fragile (surviving bit-accuracy $0.60$, collapsing under JPEG). A leaderboard probe that strengthened WM$_1$'s quantization margin, however, was a wash ($+0.0002$): the quality cost cancelled the detection gain, and dwtDct is JPEG-fragile at every strength. We conclude the natives sit near their achievable ceiling under these public encoders --- an informative negative result.
+
+\section{Results}
+Best public leaderboard: \textbf{0.8364}. The climb was driven by identification, not tuning: $0.661$ (3 schemes) $\to 0.719$ (adding CIN+MBRS) $\to 0.821$ (adding VINE+TrustMark-P) $\to 0.827$ (chroma-domain WM$_3$) $\to 0.836$ (color-axis WM$_3$ + robustness work). Decomposing the total, the seven native schemes average $\approx0.97\cdot S_\text{qlt}$ each and WM$_3$ contributes $\approx0.43$; that single scheme is essentially the entire remaining gap to the $\approx0.90$ leaders. Key hyperparameters: dwtDct length 30; TrustMark variants Q (WM$_7$) and P/\texttt{use\_ECC=False} (WM$_8$); WM$_3$ transplant fit to LPIPS $0.023$ ($\alpha\!\approx\!24$ on the unit-norm color axis). Every reported number has a reproducing script; the best submission rebuilds via \texttt{scripts/build\_best.py}.
+
+\section{Conclusion: real-world implications}
+Watermark forgery under near-black-box conditions is practical and cheap. For any \emph{deployed public} scheme, an attacker who collects a handful of same-message watermarked images can identify the scheme and re-encode with its own public encoder, producing a perfect, generalizing forgery that stamps arbitrary content as authentically watermarked and defeats provenance claims. Even unknown learned marks are partially forgeable by averaging. The one scheme we could not forge to native quality, WM$_3$, is exactly the one that is \emph{content-keyed with a non-public detector} --- which is the defensive lesson: robust provenance requires secret, content-bound, keyed watermarks whose detectors reject transplanted marks, not merely imperceptible ones built on public or guessable encoders.
+
+\end{document}

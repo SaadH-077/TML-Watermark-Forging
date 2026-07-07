@@ -1,0 +1,8 @@
+# Generated / local artifacts (not part of the reproduce bundle)
+submissions/
+__pycache__/
+*.pyc
+.env
+.venv*/
+*_repo/
+data/Dataset.zip

@@ -1,0 +1,11 @@
+# Deps for build_best.py + src/submit.py (no venvs, no GPU required).
+numpy
+opencv-python
+torch
+torchvision
+lpips
+Pillow
+requests            # for src/submit.py (leaderboard POST)
+huggingface_hub     # only for fetch_data.py (re-download the dataset)
+# The per-scheme native ENCODERS in encoders/ are reference-only and each need their own
+# repo + pinned venv (CIN, MBRS, VINE, TrustMark) — NOT required to reproduce the best zip.

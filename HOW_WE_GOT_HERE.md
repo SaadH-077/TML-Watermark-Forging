@@ -1,9 +1,9 @@
-# How we got to 0.8364, the journey
+# How we got to 0.8553, the journey
 
 A narrative companion to the report (`report/report.pdf`). The blow-by-blow log with every submission and
 number is in `EXPERIMENT_LOG.md`; this file is the readable version.
 
-**Best public score: `S_final = 0.8364`.**
+**Best public score: `S_final = 0.8553`** (all eight schemes forged by native re-encoding).
 
 ## The task and the one fact that shaped everything
 
@@ -37,39 +37,52 @@ This rigor mattered. Many apparent "hits" were artifacts: a decoder returning a 
 input, or content-correlation bias that also elevates clean images. One WM_3 "breakthrough" we investigated, 
 running classical decoders on WM_3's chroma channels, reported carrier-agreement 1.000, but the same decoder
 returns the **identical constant bits on pure random noise**. That is a degenerate reading, not a recovered
-message. It was a false positive; WM_3 stayed unidentified.
+message, so we rejected it; WM_3 stayed unidentified until the ArtificialGANFingerprints match below.
 
-## Seven of eight, cracked
+## Eight of eight, cracked
 
-Public decoders plus a systematic sweep (one candidate scheme per isolated environment) identified 7/8,
-each re-encoded natively at round-trip bit-accuracy 1.0 and tiny LPIPS:
+Public decoders plus a systematic sweep (one candidate scheme per isolated environment) identified all 8,
+each re-encoded natively at round-trip bit-accuracy 1.0 (0.96 mean for WM_3) and tiny LPIPS:
 
 | WM | scheme | forge |
 |----|--------|-------|
 | WM_1 | dwtDct (invisible-watermark) | native re-encode |
 | WM_2 | RivaGAN (invisible-watermark) | native re-encode |
+| WM_3 | **ArtificialGANFingerprints** (StegaStamp) | native re-embed |
 | WM_4 | VINE-R (ICLR'25) | native re-encode (GPU encoder) |
 | WM_5 | CIN (MM'22) | native re-encode |
 | WM_6 | MBRS (MM'21) | native re-encode |
 | WM_7 | TrustMark-Q | native re-encode |
 | WM_8 | TrustMark-P (`use_ECC=False`) | native re-encode |
-| WM_3 | **unidentified custom chroma** | color-axis transplant (fallback) |
 
-## WM_3, the scheme we could not forge to native quality
+WM_3 was the last to fall, and for a long time we thought it never would; that story is next.
 
-We ruled out **~27 public decoders** for WM_3 under the positive-control bar (all VINE W-Bench baselines,
-RoSteALS, InvisMark, CRMark, Stable-Signature, LaWa, SepMark, PIMoG, EditGuard, and classical / spread-spectrum
-families). Forensics localize WM_3 to a **low-frequency green–magenta chroma** mark that is **content-keyed**
-(per-image). We proved the transplant ceiling three independent ways:
-1. **Strength / estimator sweeps plateau.** A 20%-trimmed-mean robust estimator beats the plain mean on *decodable*
-   analog schemes but does **not** transfer to WM_3, positive evidence of content-keying.
-2. **Craver-style diagnostic:** a norm-matched template transplant reaches ~0.88 bit-accuracy on the analogous
-   VINE mark, but WM_3's detector accepts the same-quality template at only ~0.72.
-3. **Learned-manifold forger (WMCopier)** trained on the 25 carriers stayed *below* transplant parity, the
-   25-carrier data wall (the paper used ~1000–5000).
+## WM_3, the scheme we almost gave up on
 
-Our best WM_3 forge is a **color-axis `R+B−2G` chroma transplant** with a bilateral-denoised template, capped
-around `S_final ≈ 0.43`. A higher-strength version of this transplant is what took us from ~0.827 to **0.836**.
+WM_3 resists the averaging attack because it is **content-adaptive**: the shared residual sits at the
+clean-image noise floor (cross-carrier correlation ≈ 0.001), so there is no fixed pattern to average out, and a
+blind transplant caps around `S_final ≈ 0.43`. For a long stretch we could not identify it and treated it as a
+structural ceiling. We ruled out **~27 public decoders** under the positive-control bar (all VINE W-Bench
+baselines, RoSteALS, InvisMark, CRMark, Stable-Signature, LaWa, SepMark, PIMoG, EditGuard, and classical /
+spread-spectrum families), built a color-axis `R+B−2G` chroma transplant that inched WM_3 from ~0.33 to ~0.43
+(and the score from ~0.827 to **0.836**), and even convinced ourselves the ceiling was real with a Craver-style
+diagnostic and a learned diffusion forger (WMCopier) that stayed below transplant parity at 25 carriers.
+
+**That verdict was wrong.** The scheme *was* identifiable; we had simply never tried the right decoder at the
+right resolution. The break came from taking the oracle test seriously one more time, at the native 256²:
+because all 25 carriers share one message, the correct decoder must return the *same* bits on all of them. Most
+candidates gave agreement near chance, but the **ArtificialGANFingerprints** (Yu et al., ICCV 2021) **AFHQ
+cat2dog 256²** checkpoint, a **StegaStamp** autoencoder, read the 25 carriers at agreement **0.9996** while
+clean images decoded at **0.48**. Such near-perfect agreement is only possible if the benchmark used these exact
+public weights, so the hidden detector *is* this decoder. (Our earlier StegaStamp tests used only its original
+400² checkpoint and were excluded on resolution; the reissued 256² fingerprinting weights were the missing
+piece.) With the model in hand, WM_3 became like every other scheme: majority-vote the 100-bit message from the
+carriers, re-embed it into each target with the matching encoder (`forged = clip(y + a·r)`), and it decodes at
+mean bit-accuracy **0.96**. LPIPS depends on the grader's backbone (AlexNet vs VGG), which we do not know, so we
+set each image's strength `a` to maximise the **worst case** across both rather than the AlexNet optimum, which
+we found hides high-frequency texture that VGG penalises. This lifted WM_3 from ~0.43 to ≈0.67–0.78 and the
+score from 0.836 to **0.8553**, our final result. The self-contained forge is in
+`encoders/afgf_wm3_encode.py`.
 
 ## Native robustness (final analysis), and an honest negative result
 
@@ -79,19 +92,24 @@ blur → re-decode → measure surviving bits) and audited all seven natives. Si
 (classical dwtDct) is fragile (surviving bit-accuracy 0.60, collapses under JPEG). But a leaderboard probe that
 strengthened WM_1's quantization margin was a **wash** (+0.0002): the quality cost cancelled the detection gain,
 and dwtDct is JPEG-fragile at *every* strength. Conclusion: the natives sit near their achievable ceiling with
-these public encoders, the remaining gap to the ~0.90 leaders is essentially the one scheme we couldn't crack, WM_3.
+these public encoders. With WM_3 now identified too, the remaining gap to the top of the board is the quality
+and robustness of the public encoders, not a missing scheme.
 
 ## The climb
 
 `0.661` (3 schemes) → **`0.719`** (adding CIN + MBRS, +0.057) → **`0.821`** (adding VINE + TrustMark-P) →
-`0.827` (chroma-domain WM_3) → **`0.836`** (color-axis WM_3 + native robustness). The jumps were driven
-by *identification*, not leaderboard tuning, every gain is a per-scheme method that generalizes across the
-30% public / 70% private split.
+`0.827` (chroma-domain WM_3) → `0.836` (color-axis WM_3 + native robustness) → **`0.8553`** (WM_3 identified as
+ArtificialGANFingerprints and re-embedded natively, +0.019). The jumps were driven by *identification*, not
+leaderboard tuning, every gain is a per-scheme method that generalizes across the 30% public / 70% private split.
 
 ## Real-world takeaway
 
 Watermark forgery under near-black-box conditions is practical and cheap: for any *deployed public* scheme, an
 attacker with a handful of same-message watermarked images can identify the scheme and re-encode with its own
-public encoder, a perfect, generalizing forgery. The one scheme we could **not** forge, WM_3, is exactly the
-one that is content-keyed with a non-public detector. That is the defensive lesson: robust provenance needs
-secret, content-bound, keyed watermarks whose detectors reject transplanted marks, not merely imperceptible ones.
+public encoder, a perfect, generalizing forgery. WM_3 is the sharpest lesson. As a content-adaptive learned
+mark it defeats the averaging forgery that breaks the additive schemes, and we briefly mistook that resistance
+for security. But content-adaptivity is **not** protection once the weights are public: the per-image embedding
+that hides the mark is exactly what its own encoder reproduces on any target, so an attacker need only identify
+the model and re-embed. Nor is obscurity protection, WM_1 and WM_5 fall to plain averaging and WM_3 fell the
+moment we matched it to a public checkpoint. Robust provenance has to rest on a secret key or a secret detector,
+not on imperceptibility, content-adaptivity, or an undisclosed scheme built on public encoders.

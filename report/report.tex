@@ -1,0 +1,234 @@
+\documentclass{article} % For LaTeX2e
+\usepackage{iclr2025_conference,times}
+\input{math_commands.tex}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{multicol}
+\usepackage{titlesec}
+
+% --- Tighter spacing to fit two pages (main text on pp.1-2, references alone on p.3) ---
+\titlespacing*{\section}{0pt}{0.4ex plus 0.1ex minus 0.1ex}{0.2ex plus 0.1ex}
+\titlespacing*{\paragraph}{0pt}{0.3ex plus 0.1ex minus 0.1ex}{0.5em}
+\setlength{\textfloatsep}{1pt plus 1pt minus 1pt}
+\setlength{\intextsep}{1pt plus 1pt minus 1pt}
+\setlength{\abovedisplayskip}{3pt}
+\setlength{\belowdisplayskip}{3pt}
+\setlength{\abovedisplayshortskip}{1pt}
+\setlength{\belowdisplayshortskip}{1pt}
+\renewcommand{\arraystretch}{0.88}
+\setlength{\aboverulesep}{0.15ex}
+\setlength{\belowrulesep}{0.15ex}
+
+% Use numeric [N] citations instead of author-year (shorter, less clutter)
+\setcitestyle{numbers,square,comma}
+
+\title{Forging Image Watermarks by Scheme Identification\\ and Native Re-encoding}
+
+\author{%
+\textbf{Muhammad Saad Haroon} \\
+Matriculation No. 7088620 \\
+Department of Computer Science \\
+Universit\"at des Saarlandes \\
+\texttt{muha00003@stud.uni-saarland.de}
+\And
+\textbf{Jayasankar Kumar Santhirani} \\
+Matriculation No. 7089851 \\
+Department of Computer Science \\
+Universit\"at des Saarlandes \\
+\texttt{jaku00013@stud.uni-saarland.de}
+}
+
+\newcommand{\bestscore}{0.8553}
+
+\iclrfinalcopy
+
+\begin{document}
+\maketitle
+\vspace{-2.2em}
+\begin{center}
+\small\textbf{Team V}\quad\textbullet\quad Code: \url{https://github.com/SaadH-077/TML-Watermark-Forging}
+\end{center}
+\vspace{-1.4em}
+
+% -----------------------------------------------------------------------
+\section{Introduction}
+% -----------------------------------------------------------------------
+We are given $8$ unknown image watermarking schemes $\mathrm{WM}_1,\dots,\mathrm{WM}_8$. For each we receive
+$25$ watermarked ``carrier'' images that all carry \emph{one} shared hidden message, and we must transplant
+that watermark onto $25$ assigned clean target images so a hidden detector recovers the message while each
+forged image stays perceptually close to its target. Carriers and targets are different images, so this is
+true transplantation rather than re-stamping the same picture, and the resolution is fixed per scheme. A
+submission is a flat archive of $200$ PNGs, one per target.
+
+The score is $S_\text{final}=S_\text{det}\cdot S_\text{qlt}$, with
+$S_\text{det}=\max\!\big(0,\,2(\text{bitacc}-0.5)\big)$ and $S_\text{qlt}=\exp(-8\,\text{LPIPS})$. Two
+properties decide the design. First, $S_\text{det}$ is a hard gate: bit-accuracy $0.5$ zeroes the image no
+matter how good it looks. Second, LPIPS is measurable locally, but bit-accuracy is not, because we hold no
+detector; the only detection signal is the leaderboard (one submission per hour, best kept, $30\%$ public). So
+detection strength, not visual quality, is the binding constraint, and our rule was to land the bits first and
+recover LPIPS second. Our final submission reaches a public score of \textbf{\bestscore}.
+
+% -----------------------------------------------------------------------
+\section{Approach}
+% -----------------------------------------------------------------------
+
+\paragraph{Identification beats blind transplant.}
+The averaging attack estimates the watermark as the mean carrier residual and adds it to the target
+\citep{craver1998}, but fails on frequency-domain and content-adaptive marks. On the first two schemes where
+we could also decode, a native re-encode reached $S_\text{final}=0.89$ (WM$_1$) and $0.86$ (WM$_2$) while an
+additive transplant scored $\approx0$. The better route is to \emph{identify} the scheme, decode the shared
+message, and re-embed it with the scheme's own genuine encoder: the forgery is then a real watermark, decoding
+at bit-accuracy $1.0$ and generalizing across the split. Identification became our main strategy.
+
+\paragraph{The oracle test.}
+Because the $25$ carriers share one message, we can identify a scheme without a detector: decode all $25$ with
+a candidate decoder, and if they agree on one message (carrier-agreement near $1.0$) while clean images decode
+randomly (near $0.5$), it is identified. We accepted a match only with a \emph{validated positive control}
+(a genuine encode-then-decode round trip proving the decoder reads real marks) plus a known-negative control
+from an already identified scheme. This mattered, because several apparent matches were artifacts, a decoder
+returning constant output regardless of input, or content correlation that also lifts clean images. Running
+classical decoders on WM$_3$'s chroma channels, for instance, reports carrier-agreement $1.000$, but the same
+decoder returns identical constant bits on pure random noise, a degenerate reading, not a recovered message.
+
+\paragraph{What we did for each watermark.}
+We identified all eight schemes and re-encoded each natively at round-trip bit-accuracy $1.0$
+(Table~\ref{tab:schemes}): dwtDct (WM$_1$) and RivaGAN (WM$_2$) from \texttt{invisible-watermark}
+\citep{zhang2019riva}, VINE-R (WM$_4$) \citep{lu2025vine}, CIN (WM$_5$) \citep{ma2022cin}, MBRS (WM$_6$)
+\citep{jia2021mbrs}, and two TrustMark variants \citep{bui2023trustmark} (WM$_7$, WM$_8$). Two details
+mattered: WM$_1$ is a quantization mark, so we amplify its residual at $s=1.5$ to widen the margin (see the
+robustness audit below), and WM$_8$ matched only under TrustMark variant P with error correction disabled,
+which is why an earlier sweep of variant Q missed it. WM$_3$, the hardest, is ArtificialGANFingerprints
+\citep{yu2021artificial} and is discussed separately below.
+
+\begin{table}[H]
+\centering
+\footnotesize
+\caption{Per-scheme forge, all genuine native re-encodes (round-trip bit-accuracy $1.0$; WM$_3$ $0.96$). LPIPS / $S_\text{final}$ are local estimates; WM$_3$ spans the AlexNet/VGG backbones.}
+\label{tab:schemes}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{llll}
+\toprule
+WM & Scheme (message) & Forge & LPIPS / $S_\text{final}$ \\
+\midrule
+WM$_1$ & dwtDct, 30-bit                  & native re-encode, residual amplified $s{=}1.5$ & 0.006 / 0.89 \\
+WM$_2$ & RivaGAN, 32-bit                 & native re-encode                                & 0.016 / 0.86 \\
+WM$_3$ & ArtificialGANFingerprints, 100-bit & native re-embed ($256^2$)                    & 0.024 / 0.67--0.78 \\
+WM$_4$ & VINE-R, 100-bit                 & native re-encode ($256^2$)                      & 0.003 / 0.94 \\
+WM$_5$ & CIN, 30-bit                     & native re-encode ($128^2$)                      & 0.001 / 0.99 \\
+WM$_6$ & MBRS, 256-bit                   & native re-encode ($256^2$)                      & 0.002 / 0.96 \\
+WM$_7$ & TrustMark-Q, 61-bit             & native re-encode ($512^2$)                      & 0.001 / 0.99 \\
+WM$_8$ & TrustMark-P (no ECC), 100-bit   & native re-encode ($512^2$)                      & 0.001 / 0.99 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{WM$_3$: identified as ArtificialGANFingerprints.}
+WM$_3$ resisted the averaging attack because it is content-adaptive: the shared residual sits at the
+clean-image noise floor (cross-carrier correlation $\approx0.001$), so there is no fixed pattern to average
+out, and a blind transplant caps near $S_\text{final}\approx0.43$. We ruled out about $27$ public decoders and
+mistook the remaining gap for a structural ceiling. The decisive step was a decode-consistency sweep at the
+native $256^2$: since all $25$ carriers share one message, the \emph{correct} decoder returns the same bits on
+all of them. Most candidates gave chance, but the ArtificialGANFingerprints \citep{yu2021artificial} AFHQ
+cat2dog $256^2$ checkpoint, a StegaStamp \citep{tancik2020stegastamp} autoencoder, read the $25$ carriers at
+agreement $0.9996$ while clean images sat at $0.48$, which is only possible if the benchmark used these exact
+weights, so the hidden detector \emph{is} this decoder. (Earlier StegaStamp tests used only its $400^2$
+checkpoint and were excluded on resolution.) We majority-vote the $100$-bit message and re-embed it with the
+matching encoder, $\text{forged}=\mathrm{clip}(y+a\,r)$, $r=\mathrm{Enc}(\text{msg},y)-y$, decoding at mean
+bit-accuracy $0.96$. LPIPS is the only cost and depends on the grader's backbone; since that is unknown, we
+set each $a$ to maximise the \emph{worst case} over AlexNet and VGG, not the AlexNet optimum, which hides
+high-frequency texture that VGG penalises.
+
+\paragraph{Native robustness locates the residual gap.}
+The leaderboard grades bit-accuracy after an unknown pre-detection transform, so clean-PNG bit-accuracy
+overestimates the server. A local robustness oracle (decode, apply JPEG/resize/noise/blur, decode again) shows
+six of the seven learned natives already robust; only WM$_1$, the classical dwtDct mark, is fragile ($0.60$,
+collapsing under JPEG). Strengthening its margin was a wash ($+0.0002$): the quality cost cancelled the
+detection gain, since dwtDct is JPEG-fragile at every strength. The natives sit near their ceiling under these
+public encoders, an informative negative result rather than a missed lever.
+
+% -----------------------------------------------------------------------
+\section{Results}
+% -----------------------------------------------------------------------
+Adding schemes one change at a time, the public score climbed
+$0.6613$ (3 native) $\rightarrow$ $0.7188$ ($+$CIN, MBRS) $\rightarrow$ $0.8211$ ($+$VINE-R, TrustMark-P, 7
+native $+$ WM$_3$ transplant) $\rightarrow$ $0.8274$ (chroma WM$_3$ $+$ masked natives) $\rightarrow$ $0.8364$
+(WM$_3$ color-axis transplant $+$ WM$_1$ amplification $s{=}1.5$) $\rightarrow$ \textbf{\bestscore} (WM$_3$
+re-embedded natively as ArtificialGANFingerprints). Every gain came from a per-scheme method that generalizes
+across the split, not from tuning to the public sample; the final $+0.019$ changed only the WM$_3$ set, so it
+is entirely attributable to the identification. With all eight schemes native, the remaining gap to the
+strongest teams is the quality and robustness of the public encoders, not a missing scheme. The best
+submission rebuilds with one command (\texttt{build\_best.py}), and every reported number has a script behind
+it.
+
+% -----------------------------------------------------------------------
+\section{Conclusion}
+% -----------------------------------------------------------------------
+Watermark forgery under near black-box conditions is practical and cheap: for any deployed public scheme, an
+attacker with a handful of same-message watermarked images can identify the scheme and re-encode with its own
+public encoder, a genuine, generalizing forgery that stamps arbitrary content as authentically watermarked.
+WM$_3$ is the sharpest lesson. As a content-adaptive learned mark it defeats the averaging forgery that breaks
+the additive schemes, and we briefly mistook that resistance for security. But content-adaptivity is not
+protection once the weights are public: the per-image embedding that hides the mark is exactly what its own
+encoder reproduces on any target. Nor is obscurity, WM$_1$ and WM$_5$ fall to plain averaging and WM$_3$ fell
+the moment we matched it to a public checkpoint. Reliable provenance has to rest on a secret key or detector,
+not on imperceptibility, content-adaptivity, or an undisclosed scheme built on public encoders.
+
+% -----------------------------------------------------------------------
+% References
+% -----------------------------------------------------------------------
+\begingroup
+\footnotesize
+\setlength{\bibsep}{0pt}
+\begin{multicols}{2}
+\begin{thebibliography}{9}
+\bibitem{craver1998}
+S.~Craver, N.~Memon, B.-L.~Yeo, M.~M.~Yeung.
+Resolving rightful ownerships with invisible watermarking techniques: limitations, attacks, and implications.
+\textit{IEEE Journal on Selected Areas in Communications}, 1998.
+
+\bibitem{zhang2019riva}
+K.~A.~Zhang, L.~Xu, A.~Cuesta-Infante, K.~Veeramachaneni.
+Robust invisible video watermarking with attention (RivaGAN).
+\textit{arXiv:1909.01285}, 2019.
+
+\bibitem{jia2021mbrs}
+Z.~Jia, H.~Fang, W.~Zhang.
+MBRS: enhancing robustness of DNN-based watermarking by mini-batch of real and simulated JPEG compression.
+\textit{ACM Multimedia}, 2021.
+
+\bibitem{ma2022cin}
+R.~Ma, M.~Guo, Y.~Hou, F.~Yang, Y.~Li, H.~Jia, X.~Xie.
+Towards blind watermarking: combining invertible and non-invertible mechanisms (CIN).
+\textit{ACM Multimedia}, 2022.
+
+\bibitem{fernandez2023}
+P.~Fernandez, G.~Couairon, H.~J\'egou, M.~Douze, T.~Furon.
+The stable signature: rooting watermarks in latent diffusion models.
+\textit{ICCV}, 2023.
+
+\bibitem{bui2023trustmark}
+T.~Bui, S.~Agarwal, J.~Collomosse.
+TrustMark: universal watermarking for arbitrary resolution images.
+\textit{arXiv:2311.18297}, 2023.
+
+\bibitem{lu2025vine}
+S.~Lu, Z.~Zhou, J.~Lu, Y.~Zhu, A.~W.~K.~Kong.
+Robust watermarking using generative priors against image editing (VINE).
+\textit{ICLR}, 2025.
+
+\bibitem{yu2021artificial}
+N.~Yu, V.~Skripniuk, S.~Abdelnabi, M.~Fritz.
+Artificial fingerprinting for generative models: rooting deepfake attribution in training data.
+\textit{ICCV}, 2021.
+
+\bibitem{tancik2020stegastamp}
+M.~Tancik, B.~Mildenhall, R.~Ng.
+StegaStamp: invisible hyperlinks in physical photographs.
+\textit{CVPR}, 2020.
+\end{thebibliography}
+\end{multicols}
+\endgroup
+
+\end{document}
